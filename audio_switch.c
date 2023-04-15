@@ -251,9 +251,9 @@ int runAudioSwitch(int argc, const char * argv[]) {
         // require a chose
         if (!chosenDeviceID) {
             printf("Please specify audio device.\n");
-//             showUsage(argv[0]);
-       ASOutputType outputRequested = kFormatJSON; // You can use kFormatHuman, kFormatCLI, or kFormatJSON
-         listAirPlayDevices(outputRequested);
+            showUsage(argv[0]);
+//        ASOutputType outputRequested = kFormatJSON; // You can use kFormatHuman, kFormatCLI, or kFormatJSON
+//          listAirPlayDevices(outputRequested);
             return 1;
         }
 
