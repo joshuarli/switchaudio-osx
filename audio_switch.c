@@ -28,7 +28,11 @@ OTHER DEALINGS IN THE SOFTWARE.
  */
 
 #include "audio_switch.h"
-
+#include <dns_sd.h>
+#include <arpa/inet.h>
+#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
 
 void showUsage(const char * appName) {
     printf("Usage: %s [-a] [-c] [-t type] [-n] -s device_name | -i device_id | -u device_uid\n"
@@ -85,7 +89,7 @@ int runAudioSwitch(int argc, const char * argv[]) {
                 // show help
                 function = kFunctionShowHelp;
                 break;
-                
+
             case 'm':
                 // control the mute status of the interface selected with -t
                 function = kFunctionMute;
@@ -102,12 +106,12 @@ int runAudioSwitch(int argc, const char * argv[]) {
                     return 1;
                 }
                 break;
-                
+
             case 'n':
                 // cycle to the next audio device
                 function = kFunctionCycleNext;
                 break;
-                
+
             case 'i':
                 // set the requestedDeviceID
                 function = kFunctionSetDeviceByID;
@@ -144,7 +148,7 @@ int runAudioSwitch(int argc, const char * argv[]) {
                 break;
         }
     }
-    
+
     if (function == kFunctionShowAll) {
         switch(typeRequested) {
             case kAudioTypeInput:
@@ -206,9 +210,9 @@ int runAudioSwitch(int argc, const char * argv[]) {
         OSStatus status;
         bool anyStatusError = false;
         if (typeRequested == kAudioTypeUnknown) typeRequested = kAudioTypeInput;
-        
+
         switch(typeRequested) {
-            case kAudioTypeInput: 
+            case kAudioTypeInput:
             case kAudioTypeOutput:
                 status = setMute(typeRequested, muteRequested);
                 if(status != noErr) {
@@ -239,7 +243,7 @@ int runAudioSwitch(int argc, const char * argv[]) {
         return 0;
     }
 
-    
+
     if (typeRequested == kAudioTypeAll && function == kFunctionSetDeviceByName) {
         // special case for all - process each one separately
         result = setAllDevicesByName(requestedDeviceName);
@@ -248,6 +252,7 @@ int runAudioSwitch(int argc, const char * argv[]) {
         if (!chosenDeviceID) {
             printf("Please specify audio device.\n");
             showUsage(argv[0]);
+//          listAirPlayDevices();
             return 1;
         }
 
@@ -268,9 +273,9 @@ const char * getDeviceUID(AudioDeviceID deviceID) {
         kAudioObjectPropertyScopeGlobal,
         kAudioObjectPropertyElementMaster
     };
-    
+
     propertyAddress.mSelector = kAudioDevicePropertyDeviceUID;
-    
+
     OSStatus err = AudioObjectGetPropertyData(deviceID, &propertyAddress, 0, NULL, &dataSize, &deviceUID);
     if (err != 0) {
         // Handle error
@@ -289,7 +294,7 @@ const char * getDeviceUID(AudioDeviceID deviceID) {
         }
         free((void *)deviceUID_string);
     }
-    
+
     CFRelease(deviceUID);
     return "";
 }
@@ -428,13 +433,13 @@ char *deviceTypeName(ASDeviceType device_type) {
         case kAudioTypeAll: return "all";
         default: return "unknown";
     }
-    
+
 }
 
 void showCurrentlySelectedDeviceID(ASDeviceType typeRequested, ASOutputType outputRequested) {
     AudioDeviceID currentDeviceID = kAudioDeviceUnknown;
     char currentDeviceName[256];
-    
+
     currentDeviceID = getCurrentlySelectedDeviceID(typeRequested);
     getDeviceName(currentDeviceID, currentDeviceName);
 
@@ -458,24 +463,24 @@ AudioDeviceID getRequestedDeviceID(char * requestedDeviceName, ASDeviceType type
     propertyAddress.mSelector = kAudioHardwarePropertyDevices;
     propertyAddress.mScope = kAudioObjectPropertyScopeGlobal;
     propertyAddress.mElement = kAudioObjectPropertyElementMaster;
-    
+
     UInt32 propertySize;
     AudioDeviceID dev_array[64];
     int numberOfDevices = 0;
     char deviceName[256];
-    
+
     OSStatus status = AudioObjectGetPropertyDataSize(kAudioObjectSystemObject, &propertyAddress, 0, NULL, &propertySize);
     if (status != noErr) {
         printf("Error getting size of property data: %d\n", status);
         return kAudioDeviceUnknown;
     }
-    
+
     status = AudioObjectGetPropertyData(kAudioObjectSystemObject, &propertyAddress, 0, NULL, &propertySize, dev_array);
     if (status != noErr) {
         printf("Error getting property data: %d\n", status);
         return kAudioDeviceUnknown;
     }
-    
+
     numberOfDevices = (propertySize / sizeof(AudioDeviceID));
     for(int i = 0; i < numberOfDevices; ++i) {
         switch(typeRequested) {
@@ -492,13 +497,13 @@ AudioDeviceID getRequestedDeviceID(char * requestedDeviceName, ASDeviceType type
                 break;
             default: break;
         }
-        
+
         getDeviceName(dev_array[i], deviceName);
         if (strcmp(requestedDeviceName, deviceName) == 0) {
             return dev_array[i];
         }
     }
-    
+
     return kAudioDeviceUnknown;
 }
 
@@ -538,7 +543,7 @@ AudioDeviceID getNextDeviceID(AudioDeviceID currentDeviceID, ASDeviceType typeRe
                 if (getDeviceType(dev_array[i]) != kAudioTypeOutput) continue;
                 break;
 
-            default: 
+            default:
                 break;
         }
 
@@ -594,7 +599,7 @@ int setAllDevicesByName(char * requestedDeviceName) {
     int result;
     bool anyStatusError = false;
     AudioDeviceID newDeviceID;
-    
+
     // input
     newDeviceID = getRequestedDeviceID(requestedDeviceName, kAudioTypeInput);
     if (newDeviceID != nil) {
@@ -678,7 +683,7 @@ int cycleNextForOneDevice(ASDeviceType typeRequested) {
         printf("Could not find next audio device of type %s.  Nothing was changed.\n", deviceTypeName(typeRequested));
         return 1;
     }
-    
+
     // choose the requested audio device
     int result = setDevice(chosenDeviceID, typeRequested);
     if (result == 0) {
@@ -693,12 +698,12 @@ int cycleNextForOneDevice(ASDeviceType typeRequested) {
 OSStatus setMute(ASDeviceType typeRequested, ASMuteType muteRequested) {
     AudioDeviceID currentDeviceID = kAudioDeviceUnknown;
     char currentDeviceName[256];
-    
+
     currentDeviceID = getCurrentlySelectedDeviceID(typeRequested);
     getDeviceName(currentDeviceID, currentDeviceName);
-    
+
     UInt32 scope = kAudioObjectPropertyScopeInput;
-    
+
     switch(typeRequested) {
         case kAudioTypeInput:
             scope = kAudioObjectPropertyScopeInput;
@@ -794,4 +799,53 @@ void showAllDevices(ASDeviceType typeRequested, ASOutputType outputRequested) {
                 break;
         }
     }
+
 }
+
+
+static void DNSSD_API resolve_callback(DNSServiceRef sdRef, DNSServiceFlags flags, uint32_t interfaceIndex, DNSServiceErrorType errorCode, const char *fullname, const char *hosttarget, uint16_t port, uint16_t txtLen, const unsigned char *txtRecord, void *context) {
+    if (errorCode == kDNSServiceErr_NoError) {
+        printf("Device name: %s\n", fullname);
+        printf("Device host: %s\n", hosttarget);
+        printf("Device port: %u\n", ntohs(port));
+    } else {
+        printf("Resolve error: %d\n", errorCode);
+    }
+}
+
+static void DNSSD_API browse_callback(DNSServiceRef sdRef, DNSServiceFlags flags, uint32_t interfaceIndex, DNSServiceErrorType errorCode, const char *serviceName, const char *regtype, const char *replyDomain, void *context) {
+    if (errorCode != kDNSServiceErr_NoError) {
+        printf("Browse error: %d\n", errorCode);
+        return;
+    }
+
+    if (flags & kDNSServiceFlagsAdd) {
+        DNSServiceRef resolve_sdref;
+        DNSServiceErrorType err = DNSServiceResolve(&resolve_sdref, 0, interfaceIndex, serviceName, regtype, replyDomain, (DNSServiceResolveReply)resolve_callback, NULL);
+        if (err == kDNSServiceErr_NoError) {
+            DNSServiceProcessResult(resolve_sdref);
+            DNSServiceRefDeallocate(resolve_sdref);
+        } else {
+            printf("DNSServiceResolve error: %d\n", err);
+        }
+    }
+}
+
+
+void listAirPlayDevices() {
+    DNSServiceRef browse_sdref;
+       DNSServiceErrorType err = DNSServiceBrowse(&browse_sdref, 0, 0, "_airplay._tcp", NULL, (DNSServiceBrowseReply)browse_callback, NULL);
+
+       if (err == kDNSServiceErr_NoError) {
+           printf("Browsing for AirPlay devices...\n");
+           err = DNSServiceProcessResult(browse_sdref);
+           if (err != kDNSServiceErr_NoError) {
+               printf("DNSServiceProcessResult error: %d\n", err);
+           }
+           DNSServiceRefDeallocate(browse_sdref);
+       } else {
+           printf("DNSServiceBrowse error: %d\n", err);
+       }
+}
+
+

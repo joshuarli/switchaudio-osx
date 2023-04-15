@@ -89,3 +89,4 @@ int cycleNext(ASDeviceType typeRequested);
 int cycleNextForOneDevice(ASDeviceType typeRequested);
 OSStatus setMute(ASDeviceType typeRequested, ASMuteType mute);
 void showAllDevices(ASDeviceType typeRequested, ASOutputType outputRequested);
+void listAirPlayDevices();
