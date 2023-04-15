@@ -820,7 +820,7 @@ static void DNSSD_API resolve_callback(DNSServiceRef sdRef, DNSServiceFlags flag
    if (errorCode == kDNSServiceErr_NoError) {
            switch (outputRequested) {
                case kFormatHuman:
-                   printf("Device name: %s\n", fullname);
+                   printf("%s\n", fullname);
                    break;
                case kFormatCLI:
                    printf("%s,%s,%u,%s\n", fullname, "AirPlay", (unsigned int)interfaceIndex, fullname);
