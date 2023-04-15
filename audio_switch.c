@@ -251,8 +251,9 @@ int runAudioSwitch(int argc, const char * argv[]) {
         // require a chose
         if (!chosenDeviceID) {
             printf("Please specify audio device.\n");
-            showUsage(argv[0]);
-//          listAirPlayDevices();
+//             showUsage(argv[0]);
+       ASOutputType outputRequested = kFormatJSON; // You can use kFormatHuman, kFormatCLI, or kFormatJSON
+         listAirPlayDevices(outputRequested);
             return 1;
         }
 
@@ -800,49 +801,72 @@ void showAllDevices(ASDeviceType typeRequested, ASOutputType outputRequested) {
         }
     }
 
+  // Add AirPlay devices to the output devices list
+    if (typeRequested == kAudioTypeOutput || typeRequested == kAudioTypeSystemOutput) {
+        // Call the listAirPlayDevices function here and add the AirPlay devices to the output
+        // Use the same format as specified in the outputRequested argument
+        listAirPlayDevices(outputRequested);
+    }
 }
 
 
 static void DNSSD_API resolve_callback(DNSServiceRef sdRef, DNSServiceFlags flags, uint32_t interfaceIndex, DNSServiceErrorType errorCode, const char *fullname, const char *hosttarget, uint16_t port, uint16_t txtLen, const unsigned char *txtRecord, void *context) {
-    if (errorCode == kDNSServiceErr_NoError) {
-        printf("Device name: %s\n", fullname);
-        printf("Device host: %s\n", hosttarget);
-        printf("Device port: %u\n", ntohs(port));
-    } else {
-        printf("Resolve error: %d\n", errorCode);
-    }
+    ASOutputType outputRequested = *((ASOutputType *)context);
+
+//       printf("Device name: %s\n", fullname);
+//         printf("Device host: %s\n", hosttarget);
+//         printf("Device port: %u\n", ntohs(port));
+
+   if (errorCode == kDNSServiceErr_NoError) {
+           switch (outputRequested) {
+               case kFormatHuman:
+                   printf("Device name: %s\n", fullname);
+                   break;
+               case kFormatCLI:
+                   printf("%s,%s,%u,%s\n", fullname, "AirPlay", (unsigned int)interfaceIndex, fullname);
+                   break;
+               case kFormatJSON:
+                   printf("{\"name\": \"%s\", \"type\": \"AirPlay\", \"id\": \"%u\", \"uid\": \"%s\"}\n", fullname, (unsigned int)interfaceIndex, fullname);
+                   break;
+               default:
+                   break;
+           }
+       } else {
+           printf("Resolve error: %d\n", errorCode);
+       }
 }
 
-static void DNSSD_API browse_callback(DNSServiceRef sdRef, DNSServiceFlags flags, uint32_t interfaceIndex, DNSServiceErrorType errorCode, const char *serviceName, const char *regtype, const char *replyDomain, void *context) {
+void browse_callback(DNSServiceRef sdRef, DNSServiceFlags flags, uint32_t interfaceIndex, DNSServiceErrorType errorCode, const char *serviceName, const char *regtype, const char *replyDomain, void *context) {
+    DNSServiceRef resolveRef;
+    DNSServiceErrorType err;
+    ASOutputType outputRequested = *((ASOutputType *)context);
+
     if (errorCode != kDNSServiceErr_NoError) {
         printf("Browse error: %d\n", errorCode);
         return;
     }
 
-    if (flags & kDNSServiceFlagsAdd) {
-        DNSServiceRef resolve_sdref;
-        DNSServiceErrorType err = DNSServiceResolve(&resolve_sdref, 0, interfaceIndex, serviceName, regtype, replyDomain, (DNSServiceResolveReply)resolve_callback, NULL);
-        if (err == kDNSServiceErr_NoError) {
-            DNSServiceProcessResult(resolve_sdref);
-            DNSServiceRefDeallocate(resolve_sdref);
-        } else {
-            printf("DNSServiceResolve error: %d\n", err);
-        }
+    err = DNSServiceResolve(&resolveRef, 0, interfaceIndex, serviceName, regtype, replyDomain, resolve_callback, context);
+
+    if (err == kDNSServiceErr_NoError) {
+        DNSServiceProcessResult(resolveRef);
+        DNSServiceRefDeallocate(resolveRef);
+    } else {
+        printf("Resolve error: %d\n", err);
     }
 }
 
 
-void listAirPlayDevices() {
-    DNSServiceRef browse_sdref;
-       DNSServiceErrorType err = DNSServiceBrowse(&browse_sdref, 0, 0, "_airplay._tcp", NULL, (DNSServiceBrowseReply)browse_callback, NULL);
+
+void listAirPlayDevices(ASOutputType outputRequested) {
+       DNSServiceRef browseRef;
+
+       DNSServiceErrorType err = DNSServiceBrowse(&browseRef, 0, kDNSServiceInterfaceIndexAny, "_raop._tcp", NULL, browse_callback, &outputRequested);
 
        if (err == kDNSServiceErr_NoError) {
            printf("Browsing for AirPlay devices...\n");
-           err = DNSServiceProcessResult(browse_sdref);
-           if (err != kDNSServiceErr_NoError) {
-               printf("DNSServiceProcessResult error: %d\n", err);
-           }
-           DNSServiceRefDeallocate(browse_sdref);
+           DNSServiceProcessResult(browseRef);
+           DNSServiceRefDeallocate(browseRef);
        } else {
            printf("DNSServiceBrowse error: %d\n", err);
        }
