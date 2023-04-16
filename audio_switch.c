@@ -50,9 +50,7 @@ void showUsage(const char * appName) {
            "  -s device_name : sets the audio device to the given device by name\n\n",appName);
 }
 
-
-
-OSStatus setOutputDeviceToAirPlayWithName(const char *deviceName) {
+AudioDeviceID getAirPlayDeviceIDWithName(const char *deviceUIDPrefix) {
     AudioObjectPropertyAddress propertyAddress = {
         kAudioHardwarePropertyDevices,
         kAudioObjectPropertyScopeGlobal,
@@ -61,47 +59,56 @@ OSStatus setOutputDeviceToAirPlayWithName(const char *deviceName) {
 
     UInt32 dataSize = 0;
     OSStatus status = AudioObjectGetPropertyDataSize(kAudioObjectSystemObject, &propertyAddress, 0, NULL, &dataSize);
-    if (status != noErr) {
-        printf("Error getting data size for devices property: %d\n", status);
-        return status;
-    }
+    if (status != noErr) return kAudioDeviceUnknown;
 
     UInt32 deviceCount = dataSize / sizeof(AudioDeviceID);
     AudioDeviceID deviceIDs[deviceCount];
     status = AudioObjectGetPropertyData(kAudioObjectSystemObject, &propertyAddress, 0, NULL, &dataSize, deviceIDs);
-    if (status != noErr) {
-        printf("Error getting devices property data: %d\n", status);
-        return status;
-    }
+    if (status != noErr) return kAudioDeviceUnknown;
 
-    for (UInt32 i = 0; i < deviceCount; ++i) {
-        propertyAddress.mSelector = kAudioDevicePropertyDeviceName;
-        dataSize = 256; // Fixed the size of the currentDeviceName array
-        char currentDeviceName[dataSize];
-
-        status = AudioObjectGetPropertyData(deviceIDs[i], &propertyAddress, 0, NULL, &dataSize, currentDeviceName);
-        if (status != noErr) {
-            printf("Error getting device name: %d\n", status);
-            continue;
-        }
-
-        if (strstr(currentDeviceName, deviceName) == 0) {
-            propertyAddress.mSelector = kAudioHardwarePropertyDefaultOutputDevice;
-            dataSize = sizeof(AudioDeviceID);
-            status = AudioObjectSetPropertyData(kAudioObjectSystemObject, &propertyAddress, 0, NULL, dataSize, &deviceIDs[i]);
-
-            if (status == noErr) {
-                printf("Output device set to %s\n", deviceName);
-            } else {
-                printf("Error setting output device: %d\n", status);
+    AudioDeviceID targetDeviceID = kAudioDeviceUnknown;
+    for (UInt32 i = 0; i < deviceCount; i++) {
+        CFStringRef deviceUIDRef = NULL;
+        dataSize = sizeof(deviceUIDRef);
+        propertyAddress.mSelector = kAudioDevicePropertyDeviceUID;
+        status = AudioObjectGetPropertyData(deviceIDs[i], &propertyAddress, 0, NULL, &dataSize, &deviceUIDRef);
+        if (status == noErr) {
+            if (CFStringFind(deviceUIDRef, CFStringCreateWithCString(kCFAllocatorDefault, deviceUIDPrefix, kCFStringEncodingUTF8), 0).location != kCFNotFound) {
+                targetDeviceID = deviceIDs[i];
+                CFRelease(deviceUIDRef);
+                break;
             }
-
-            return status;
+            CFRelease(deviceUIDRef);
         }
     }
 
-    printf("AirPlay device with name %s not found.\n", deviceName);
-    return kAudioHardwareUnspecifiedError;
+    return targetDeviceID;
+}
+
+
+
+OSStatus setOutputDeviceToAirPlayWithName(const char *deviceName) {
+    AudioDeviceID targetDeviceID = getAirPlayDeviceIDWithName(deviceName);
+    if (targetDeviceID == kAudioDeviceUnknown) {
+        printf("AirPlay device with name %s not found.\n", deviceName);
+        return kAudioHardwareBadDeviceError;
+    }
+
+    AudioObjectPropertyAddress propertyAddress = {
+        kAudioHardwarePropertyDefaultOutputDevice,
+        kAudioObjectPropertyScopeGlobal,
+        kAudioObjectPropertyElementMaster
+    };
+
+    UInt32 dataSize = sizeof(targetDeviceID);
+    OSStatus status = AudioObjectSetPropertyData(kAudioObjectSystemObject, &propertyAddress, 0, NULL, dataSize, &targetDeviceID);
+    if (status != noErr) {
+        printf("Error setting output device to AirPlay: %d\n", status);
+    } else {
+        printf("Output device set to %s\n", deviceName);
+    }
+
+    return status;
 }
 
 int runAudioSwitch(int argc, const char * argv[]) {
@@ -311,8 +318,7 @@ int runAudioSwitch(int argc, const char * argv[]) {
             showUsage(argv[0]);
 //        ASOutputType outputRequested = kFormatJSON; // You can use kFormatHuman, kFormatCLI, or kFormatJSON
 //          listAirPlayDevices(outputRequested);
-
-            setOutputDeviceToAirPlayWithName("D4909CD773C2@HomePod一代.");
+//             setOutputDeviceToAirPlayWithName("D4909CD773C2");
             return 1;
         }
 
@@ -877,15 +883,38 @@ static void DNSSD_API resolve_callback(DNSServiceRef sdRef, DNSServiceFlags flag
 //         printf("Device port: %u\n", ntohs(port));
 
    if (errorCode == kDNSServiceErr_NoError) {
+
+      // Extract the device name from the fullname string
+              const char *nameStart = strstr(fullname, "@");
+              if (nameStart == NULL) {
+                  return;
+              }
+              nameStart++;
+              const char *nameEnd = strstr(nameStart, "._");
+              if (nameEnd == NULL) {
+                  return;
+              }
+              char deviceName[256] = {0};
+              strncat(deviceName, nameStart, nameEnd - nameStart);
+
+              // Check if the host target contains "MacBook", and skip this device if it does
+              const char *macBookCheck = "MacBook";
+              if (strstr(hosttarget, macBookCheck) != NULL) {
+                  return;
+              }
+
+    char deviceId[256] = {0};
+    strncpy(deviceId, fullname, nameStart - fullname - 1);
+
            switch (outputRequested) {
                case kFormatHuman:
-                   printf("%s\n", fullname);
+                   printf("%s\n", deviceName);
                    break;
                case kFormatCLI:
-                   printf("%s,%s,%u,%s\n", fullname, "AirPlay", (unsigned int)interfaceIndex, fullname);
+                   printf("%s,%s,%u,%s\n", deviceName, "AirPlay", (unsigned int)interfaceIndex, deviceName);
                    break;
                case kFormatJSON:
-                   printf("{\"name\": \"%s\", \"type\": \"AirPlay\", \"id\": \"%u\", \"uid\": \"%s\"}\n", fullname, (unsigned int)interfaceIndex, fullname);
+                   printf("{\"name\": \"%s\", \"type\": \"AirPlay\", \"id\": \"%u\", \"uid\": \"%s\"}\n", deviceName, (unsigned int)interfaceIndex, fullname);
                    break;
                default:
                    break;
@@ -923,7 +952,6 @@ void listAirPlayDevices(ASOutputType outputRequested) {
        DNSServiceErrorType err = DNSServiceBrowse(&browseRef, 0, kDNSServiceInterfaceIndexAny, "_raop._tcp", NULL, browse_callback, &outputRequested);
 
        if (err == kDNSServiceErr_NoError) {
-           printf("Browsing for AirPlay devices...\n");
            DNSServiceProcessResult(browseRef);
            DNSServiceRefDeallocate(browseRef);
        } else {
