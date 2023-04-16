@@ -914,7 +914,7 @@ static void DNSSD_API resolve_callback(DNSServiceRef sdRef, DNSServiceFlags flag
                    printf("%s,%s,%u,%s\n", deviceName, "AirPlay", (unsigned int)interfaceIndex, deviceName);
                    break;
                case kFormatJSON:
-                   printf("{\"name\": \"%s\", \"type\": \"AirPlay\", \"id\": \"%u\", \"uid\": \"%s\"}\n", deviceName, (unsigned int)interfaceIndex, fullname);
+                   printf("{\"name\": \"%s\", \"type\": \"output\", \"id\": \"%u\", \"uid\": \"%s\"}\n", deviceName, (unsigned int)interfaceIndex, fullname);
                    break;
                default:
                    break;
