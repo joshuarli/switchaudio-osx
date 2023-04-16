@@ -33,6 +33,9 @@ OTHER DEALINGS IN THE SOFTWARE.
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+#include <CoreAudio/CoreAudio.h>
+#include <stdio.h>
+#include <string.h>
 
 void showUsage(const char * appName) {
     printf("Usage: %s [-a] [-c] [-t type] [-n] -s device_name | -i device_id | -u device_uid\n"
@@ -45,6 +48,60 @@ void showUsage(const char * appName) {
            "  -i device_id   : sets the audio device to the given device by id\n"
            "  -u device_uid  : sets the audio device to the given device by uid or a substring of the uid\n"
            "  -s device_name : sets the audio device to the given device by name\n\n",appName);
+}
+
+
+
+OSStatus setOutputDeviceToAirPlayWithName(const char *deviceName) {
+    AudioObjectPropertyAddress propertyAddress = {
+        kAudioHardwarePropertyDevices,
+        kAudioObjectPropertyScopeGlobal,
+        kAudioObjectPropertyElementMaster
+    };
+
+    UInt32 dataSize = 0;
+    OSStatus status = AudioObjectGetPropertyDataSize(kAudioObjectSystemObject, &propertyAddress, 0, NULL, &dataSize);
+    if (status != noErr) {
+        printf("Error getting data size for devices property: %d\n", status);
+        return status;
+    }
+
+    UInt32 deviceCount = dataSize / sizeof(AudioDeviceID);
+    AudioDeviceID deviceIDs[deviceCount];
+    status = AudioObjectGetPropertyData(kAudioObjectSystemObject, &propertyAddress, 0, NULL, &dataSize, deviceIDs);
+    if (status != noErr) {
+        printf("Error getting devices property data: %d\n", status);
+        return status;
+    }
+
+    for (UInt32 i = 0; i < deviceCount; ++i) {
+        propertyAddress.mSelector = kAudioDevicePropertyDeviceName;
+        dataSize = 256; // Fixed the size of the currentDeviceName array
+        char currentDeviceName[dataSize];
+
+        status = AudioObjectGetPropertyData(deviceIDs[i], &propertyAddress, 0, NULL, &dataSize, currentDeviceName);
+        if (status != noErr) {
+            printf("Error getting device name: %d\n", status);
+            continue;
+        }
+
+        if (strstr(currentDeviceName, deviceName) == 0) {
+            propertyAddress.mSelector = kAudioHardwarePropertyDefaultOutputDevice;
+            dataSize = sizeof(AudioDeviceID);
+            status = AudioObjectSetPropertyData(kAudioObjectSystemObject, &propertyAddress, 0, NULL, dataSize, &deviceIDs[i]);
+
+            if (status == noErr) {
+                printf("Output device set to %s\n", deviceName);
+            } else {
+                printf("Error setting output device: %d\n", status);
+            }
+
+            return status;
+        }
+    }
+
+    printf("AirPlay device with name %s not found.\n", deviceName);
+    return kAudioHardwareUnspecifiedError;
 }
 
 int runAudioSwitch(int argc, const char * argv[]) {
@@ -254,6 +311,8 @@ int runAudioSwitch(int argc, const char * argv[]) {
             showUsage(argv[0]);
 //        ASOutputType outputRequested = kFormatJSON; // You can use kFormatHuman, kFormatCLI, or kFormatJSON
 //          listAirPlayDevices(outputRequested);
+
+            setOutputDeviceToAirPlayWithName("D4909CD773C2@HomePod一代.");
             return 1;
         }
 
@@ -871,5 +930,4 @@ void listAirPlayDevices(ASOutputType outputRequested) {
            printf("DNSServiceBrowse error: %d\n", err);
        }
 }
-
 
