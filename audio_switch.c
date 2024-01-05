@@ -167,6 +167,56 @@ OSStatus setOutputDeviceToAirPlayWithDeviceId(const char *deviceId) {
 
 
 int runAudioSwitch(int argc, const char * argv[]) {
+	AudioObjectPropertyAddress addr;
+	UInt32 propsize;
+
+	// target all available audio devices
+	addr.mSelector = kAudioHardwarePropertyDevices;
+	addr.mScope = kAudioObjectPropertyScopeWildcard;
+	addr.mElement = kAudioObjectPropertyElementWildcard;
+
+	// get size of available data
+	AudioObjectGetPropertyDataSize(kAudioObjectSystemObject, &addr, 0, NULL, &propsize);
+
+	int nDevices = propsize / sizeof(AudioDeviceID);
+	AudioDeviceID *devids = malloc(propsize);
+
+	// get actual device id array data
+	AudioObjectGetPropertyData(kAudioObjectSystemObject, &addr, 0, NULL, &propsize, devids);
+
+	// target device transport type property
+	addr.mSelector = kAudioDevicePropertyTransportType;
+	addr.mScope = kAudioObjectPropertyScopeGlobal;
+	addr.mElement = kAudioObjectPropertyElementMaster;
+
+	unsigned int transportType = 0;
+	propsize = sizeof(transportType);
+	for (int i=0; i<nDevices; i++) {
+	  AudioObjectGetPropertyData(devids[i], &addr, 0, NULL, &propsize, &transportType);
+
+
+	  printf("%u %u\n", kAudioDeviceTransportTypeAirPlay, transportType);
+
+	  if (kAudioDeviceTransportTypeAirPlay == transportType) {
+	      // Found AirPlay audio device
+	      // ugh so  we don't reach here until i actually go and click to connect to airplay
+	      // apple can list the device but we won't see it here until it's ... discovered
+	      // this is why you can see it via listAirPlayDevices
+	      // but not connect to it...
+	      printf("id: %d\n", devids[i]);
+	  }
+	}
+
+	free(devids);
+
+	// https://joris.kluivers.nl/blog/2012/07/25/per-application-airplay-in-mountain-lion/
+	// https://stackoverflow.com/questions/14020222/the-way-to-find-out-if-airplay-audio-device-is-in-use-password-protected-by-cor
+	// https://openairplay.github.io/airplay-spec/service_discovery.html
+	// https://openairplay.github.io/airplay-spec/audio/rtsp_requests/announce.html
+
+	return 0;
+
+
     char requestedDeviceName[256];
     char printableDeviceName[256];
     int requestedDeviceID;
@@ -276,6 +326,7 @@ int runAudioSwitch(int argc, const char * argv[]) {
                 break;
             case kAudioTypeSystemOutput:
                 showAllDevices(kAudioTypeOutput, outputRequested);
+                setOutputDeviceToAirPlayWithDeviceId("D4A33D6F8BDC");
                 break;
             default:
                 showAllDevices(kAudioTypeInput, outputRequested);
@@ -371,9 +422,6 @@ int runAudioSwitch(int argc, const char * argv[]) {
         if (!chosenDeviceID) {
             printf("Please specify audio device.\n");
             showUsage(argv[0]);
-//        ASOutputType outputRequested = kFormatJSON; // You can use kFormatHuman, kFormatCLI, or kFormatJSON
-//          listAirPlayDevices(outputRequested);
-            setOutputDeviceToAirPlayWithDeviceId("D4909CD773C2");
             return 1;
         }
 
